@@ -1,0 +1,26 @@
+# ComfyUI YAML Image Cycler 設定ファイル
+# 各カテゴリごとに画像フォルダとプロンプト、LoRA設定を定義
+
+character1:
+  prompt: "1girl, beautiful, anime style, detailed face"
+  lora1: "<lora:character1_v1:0.8>"
+  lora2: "<lora:anime_style:0.6>"
+  lora3: ""
+
+character2:
+  prompt: "1boy, handsome, realistic, portrait"
+  lora1: "<lora:character2_v2:0.9>"
+  lora2: "<lora:realistic_style:0.7>"
+  lora3: "<lora:portrait_enhance:0.5>"
+
+background:
+  prompt: "beautiful landscape, detailed background, high quality"
+  lora1: "<lora:landscape_v1:0.8>"
+  lora2: ""
+  lora3: ""
+
+style_test:
+  prompt: "masterpiece, best quality, highly detailed"
+  lora1: "<lora:style_mix:0.6>"
+  lora2: "<lora:quality_boost:0.4>"
+  lora3: "<lora:detail_enhance:0.3>"
