@@ -2,17 +2,17 @@ import os
 import yaml
 import folder_paths
 
-class YAMLLoRAExtractor:
+class YAMLLoRALoader:
     """
-    YAMLファイルからLoRA情報を抽出する専用ノード
-    WanVideo Lora Selectとの互換性を重視
+    YAMLファイルからLoRA情報を読み込み、ComfyUI標準のLoRALoader形式で出力するノード
+    WanVideo Lora Selectとの完全互換性を目指す
     """
 
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = ("STRING", "*", "*", "*", "FLOAT", "FLOAT", "FLOAT")
-    RETURN_NAMES  = ("prompt", "lora1_name", "lora2_name", "lora3_name", "lora1_weight", "lora2_weight", "lora3_weight")
+    RETURN_TYPES  = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES  = ("prompt", "lora1", "lora2", "lora3")
 
     def __init__(self):
         self._yaml_buf = {}    # キャッシュした YAML dict
@@ -31,10 +31,22 @@ class YAMLLoRAExtractor:
         except Exception:
             keys = []
 
+        # 利用可能なLoRAファイルを取得
+        try:
+            lora_list = folder_paths.get_filename_list("loras")
+            lora_names = [os.path.splitext(f)[0] for f in lora_list]
+        except:
+            lora_names = []
+
         return {
             "required": {
                 "yaml_path": ("STRING", {"default": default_yaml}),
                 "category": (keys if keys else "STRING", )
+            },
+            "optional": {
+                "lora1_override": (["None"] + lora_names, {"default": "None"}),
+                "lora2_override": (["None"] + lora_names, {"default": "None"}),
+                "lora3_override": (["None"] + lora_names, {"default": "None"}),
             }
         }
 
@@ -61,45 +73,36 @@ class YAMLLoRAExtractor:
     def _get_available_loras(self):
         """利用可能なLoRAファイルのリストを取得"""
         try:
-            # ComfyUIのfolder_pathsを使用してLoRAファイルを取得
             lora_files = folder_paths.get_filename_list("loras")
-            # 拡張子を除去してLoRA名のみを返す
             lora_names = [os.path.splitext(f)[0] for f in lora_files]
             return lora_names
         except Exception as e:
-            print(f"[YAMLLoRAExtractor] LoRAファイル取得エラー: {e}")
+            print(f"[YAMLLoRALoader] LoRAファイル取得エラー: {e}")
             return []
 
     def _parse_lora_string(self, lora_string):
-        """LoRA文字列を解析して名前と重みを抽出
-        例: '<lora:character1_v1:0.8>' -> ('character1_v1', 0.8)
+        """LoRA文字列を解析して名前を抽出
+        例: '<lora:character1_v1:0.8>' -> 'character1_v1'
         """
         if not lora_string or not isinstance(lora_string, str):
-            return "", 1.0
+            return ""
         
         # <lora:name:weight> 形式の場合
         if lora_string.startswith("<lora:") and lora_string.endswith(">"):
             # <lora: と > を除去
             content = lora_string[6:-1]
-            # : で分割
+            # : で分割して名前部分を取得
             parts = content.split(":")
-            if len(parts) >= 2:
-                name = parts[0].strip()
-                try:
-                    weight = float(parts[1].strip())
-                except ValueError:
-                    weight = 1.0
-                return name, weight
-            elif len(parts) == 1:
-                return parts[0].strip(), 1.0
+            if len(parts) >= 1:
+                return parts[0].strip()
         
-        # 通常の文字列の場合は名前のみ
-        return str(lora_string).strip(), 1.0
+        # 通常の文字列の場合はそのまま返す
+        return str(lora_string).strip()
 
     def _validate_lora_name(self, lora_name, available_loras):
         """LoRA名が利用可能なLoRAリストに存在するかチェック"""
         if not lora_name:
-            return None
+            return "None"
         
         # 完全一致をチェック
         if lora_name in available_loras:
@@ -109,18 +112,18 @@ class YAMLLoRAExtractor:
         lora_name_lower = lora_name.lower()
         for available in available_loras:
             if available.lower() == lora_name_lower:
-                print(f"[YAMLLoRAExtractor] LoRA名を修正: {lora_name} -> {available}")
+                print(f"[YAMLLoRALoader] LoRA名を修正: {lora_name} -> {available}")
                 return available
         
-        # 見つからない場合は警告を出力してそのまま返す
-        print(f"[YAMLLoRAExtractor] 警告: LoRA '{lora_name}' が見つかりません")
-        print(f"[YAMLLoRAExtractor] 利用可能なLoRA: {available_loras[:10]}...")  # 最初の10個を表示
-        return lora_name
+        # 見つからない場合は警告を出力して"None"を返す
+        print(f"[YAMLLoRALoader] 警告: LoRA '{lora_name}' が見つかりません")
+        print(f"[YAMLLoRALoader] 利用可能なLoRA: {available_loras[:10]}...")
+        return "None"
 
     # ───────────────────────────────────────────
     # メイン処理
     # ───────────────────────────────────────────
-    def execute(self, yaml_path: str, category: str):
+    def execute(self, yaml_path: str, category: str, lora1_override="None", lora2_override="None", lora3_override="None"):
         """メイン実行関数"""
         try:
             # YAML設定を読み込み
@@ -143,27 +146,35 @@ class YAMLLoRAExtractor:
             prompt = str(category_config.get("prompt", ""))
             
             # LoRA情報を解析
-            lora1_raw = category_config.get("lora1", "")
-            lora2_raw = category_config.get("lora2", "")
-            lora3_raw = category_config.get("lora3", "")
-            
-            lora1_name, lora1_weight = self._parse_lora_string(lora1_raw)
-            lora2_name, lora2_weight = self._parse_lora_string(lora2_raw)
-            lora3_name, lora3_weight = self._parse_lora_string(lora3_raw)
+            if lora1_override != "None":
+                lora1_name = lora1_override
+            else:
+                lora1_raw = category_config.get("lora1", "")
+                lora1_name = self._parse_lora_string(lora1_raw)
+                lora1_name = self._validate_lora_name(lora1_name, available_loras)
 
-            # LoRA名を検証・修正
-            lora1_name = self._validate_lora_name(lora1_name, available_loras)
-            lora2_name = self._validate_lora_name(lora2_name, available_loras)
-            lora3_name = self._validate_lora_name(lora3_name, available_loras)
+            if lora2_override != "None":
+                lora2_name = lora2_override
+            else:
+                lora2_raw = category_config.get("lora2", "")
+                lora2_name = self._parse_lora_string(lora2_raw)
+                lora2_name = self._validate_lora_name(lora2_name, available_loras)
 
-            print(f"[YAMLLoRAExtractor] カテゴリ: {category}")
-            print(f"[YAMLLoRAExtractor] プロンプト: {prompt}")
-            print(f"[YAMLLoRAExtractor] LoRA1: {lora1_name} (重み: {lora1_weight})")
-            print(f"[YAMLLoRAExtractor] LoRA2: {lora2_name} (重み: {lora2_weight})")
-            print(f"[YAMLLoRAExtractor] LoRA3: {lora3_name} (重み: {lora3_weight})")
+            if lora3_override != "None":
+                lora3_name = lora3_override
+            else:
+                lora3_raw = category_config.get("lora3", "")
+                lora3_name = self._parse_lora_string(lora3_raw)
+                lora3_name = self._validate_lora_name(lora3_name, available_loras)
 
-            return (prompt, lora1_name, lora2_name, lora3_name, lora1_weight, lora2_weight, lora3_weight)
+            print(f"[YAMLLoRALoader] カテゴリ: {category}")
+            print(f"[YAMLLoRALoader] プロンプト: {prompt}")
+            print(f"[YAMLLoRALoader] LoRA1: {lora1_name}")
+            print(f"[YAMLLoRALoader] LoRA2: {lora2_name}")
+            print(f"[YAMLLoRALoader] LoRA3: {lora3_name}")
+
+            return (prompt, lora1_name, lora2_name, lora3_name)
 
         except Exception as e:
-            print(f"[YAMLLoRAExtractor] エラー: {e}")
+            print(f"[YAMLLoRALoader] エラー: {e}")
             raise e
