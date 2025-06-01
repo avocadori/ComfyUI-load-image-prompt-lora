@@ -2,6 +2,7 @@ import os
 import yaml
 from PIL import Image
 import numpy as np
+import sys
 
 class YAMLImageCycler:
     """
@@ -142,6 +143,58 @@ class YAMLImageCycler:
         
         return None
 
+    def _get_comfyui_lora_paths(self):
+        """ComfyUIのLoRAフォルダパスを取得"""
+        possible_paths = []
+        
+        # 現在のディレクトリから上位を検索
+        current_dir = os.getcwd()
+        for i in range(5):  # 最大5階層上まで検索
+            test_path = os.path.join(current_dir, "models", "loras")
+            if os.path.isdir(test_path):
+                possible_paths.append(test_path)
+            current_dir = os.path.dirname(current_dir)
+        
+        # 相対パス
+        relative_paths = [
+            "models/loras",
+            "../models/loras",
+            "../../models/loras",
+            "../../../models/loras"
+        ]
+        
+        for rel_path in relative_paths:
+            if os.path.isdir(rel_path):
+                possible_paths.append(os.path.abspath(rel_path))
+        
+        # 環境変数から取得
+        if os.environ.get("COMFYUI_PATH"):
+            env_path = os.path.join(os.environ.get("COMFYUI_PATH"), "models", "loras")
+            if os.path.isdir(env_path):
+                possible_paths.append(env_path)
+        
+        return list(set(possible_paths))  # 重複を除去
+
+    def _check_lora_exists(self, lora_name):
+        """LoRAファイルの存在確認"""
+        if not lora_name:
+            return False
+            
+        lora_paths = self._get_comfyui_lora_paths()
+        lora_extensions = [".safetensors", ".ckpt", ".pt", ".pth"]
+        
+        for base_path in lora_paths:
+            for ext in lora_extensions:
+                lora_file = os.path.join(base_path, f"{lora_name}{ext}")
+                if os.path.exists(lora_file):
+                    print(f"[YAMLImageCycler] LoRAファイル確認: {lora_file}")
+                    return True
+        
+        # 見つからない場合は検索パスを表示
+        print(f"[YAMLImageCycler] LoRAファイル '{lora_name}' が見つかりません")
+        print(f"[YAMLImageCycler] 検索パス: {lora_paths}")
+        return False
+
     def _extract_lora_name(self, lora_string):
         """LoRA文字列から名前部分を抽出
         例: '<lora:character1_v1:0.8>' -> 'character1_v1'
@@ -156,10 +209,16 @@ class YAMLImageCycler:
             # : で分割して名前部分を取得
             parts = content.split(":")
             if len(parts) >= 1:
-                return parts[0].strip()
+                lora_name = parts[0].strip()
+                # LoRAファイルの存在確認
+                self._check_lora_exists(lora_name)
+                return lora_name
         
         # 通常の文字列の場合はそのまま返す
-        return str(lora_string).strip()
+        lora_name = str(lora_string).strip()
+        if lora_name:
+            self._check_lora_exists(lora_name)
+        return lora_name
 
     # ───────────────────────────────────────────
     # メイン処理
