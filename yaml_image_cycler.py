@@ -6,14 +6,14 @@ import numpy as np
 class YAMLImageCycler:
     """
     指定カテゴリの画像を 1 枚ずつ巡回させながら、
-    YAML に書かれた prompt / lora1-3 を一緒に返すノード。
+    YAML に書かれた prompt / lora1-3 とマスクを一緒に返すノード。
     """
 
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = ("IMAGE", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES  = ("image", "prompt", "lora1", "lora2", "lora3")
+    RETURN_TYPES  = ("IMAGE", "MASK", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES  = ("image", "mask", "prompt", "lora1", "lora2", "lora3")
 
     def __init__(self):
         # インスタンス変数として状態を管理
@@ -95,6 +95,72 @@ class YAMLImageCycler:
         except Exception as e:
             raise RuntimeError(f"画像の読み込みに失敗しました: {image_path}, エラー: {e}")
 
+    def _load_mask_as_tensor(self, mask_path):
+        """マスク画像をComfyUI形式のテンソルとして読み込み"""
+        if not os.path.exists(mask_path):
+            return None
+        
+        try:
+            pil_mask = Image.open(mask_path).convert("L")  # グレースケールに変換
+            # ComfyUI の MASK フォーマット (B, H, W, fp32 0-1)
+            np_mask = np.array(pil_mask).astype(np.float32) / 255.0
+            np_mask = np_mask[None,]  # Batch 次元を付加
+            return np_mask
+        except Exception as e:
+            print(f"[YAMLImageCycler] マスクの読み込みに失敗: {mask_path}, エラー: {e}")
+            return None
+
+    def _create_empty_mask(self, height, width):
+        """空のマスクを作成"""
+        return np.zeros((1, height, width), dtype=np.float32)
+
+    def _find_mask_file(self, image_path, mask_folder=None):
+        """画像に対応するマスクファイルを検索"""
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
+        image_dir = os.path.dirname(image_path)
+        
+        # マスクフォルダが指定されている場合はそこを検索
+        if mask_folder and os.path.isdir(mask_folder):
+            search_dirs = [mask_folder]
+        else:
+            # デフォルトでは画像と同じフォルダ内のmasksサブフォルダを検索
+            search_dirs = [
+                os.path.join(image_dir, "masks"),
+                image_dir  # 画像と同じフォルダも検索
+            ]
+        
+        mask_extensions = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
+        
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
+                continue
+                
+            for ext in mask_extensions:
+                mask_path = os.path.join(search_dir, f"{image_name}{ext}")
+                if os.path.exists(mask_path):
+                    return mask_path
+        
+        return None
+
+    def _extract_lora_name(self, lora_string):
+        """LoRA文字列から名前部分を抽出
+        例: '<lora:character1_v1:0.8>' -> 'character1_v1'
+        """
+        if not lora_string or not isinstance(lora_string, str):
+            return ""
+        
+        # <lora:name:weight> 形式の場合
+        if lora_string.startswith("<lora:") and lora_string.endswith(">"):
+            # <lora: と > を除去
+            content = lora_string[6:-1]
+            # : で分割して名前部分を取得
+            parts = content.split(":")
+            if len(parts) >= 1:
+                return parts[0].strip()
+        
+        # 通常の文字列の場合はそのまま返す
+        return str(lora_string).strip()
+
     # ───────────────────────────────────────────
     # メイン処理
     # ───────────────────────────────────────────
@@ -123,16 +189,37 @@ class YAMLImageCycler:
             img_path = os.path.join(cat_folder, images[current_idx])
             image_tensor = self._load_image_as_tensor(img_path)
 
-            # YAML から設定値を抽出（None → 空文字）
+            # マスクを検索・読み込み
             category_config = cfg[category]
+            mask_folder = category_config.get("mask_folder")  # YAMLでマスクフォルダを指定可能
+            if mask_folder:
+                mask_folder = os.path.join(parent_dir, mask_folder)
+            
+            mask_path = self._find_mask_file(img_path, mask_folder)
+            if mask_path:
+                mask_tensor = self._load_mask_as_tensor(mask_path)
+                print(f"[YAMLImageCycler] マスク読み込み: {os.path.basename(mask_path)}")
+            else:
+                # マスクが見つからない場合は空のマスクを作成
+                height, width = image_tensor.shape[1], image_tensor.shape[2]
+                mask_tensor = self._create_empty_mask(height, width)
+                print(f"[YAMLImageCycler] マスクが見つからないため空のマスクを作成")
+
+            # YAML から設定値を抽出
             prompt = str(category_config.get("prompt", ""))
-            lora1 = str(category_config.get("lora1", ""))
-            lora2 = str(category_config.get("lora2", ""))
-            lora3 = str(category_config.get("lora3", ""))
+            lora1_raw = category_config.get("lora1", "")
+            lora2_raw = category_config.get("lora2", "")
+            lora3_raw = category_config.get("lora3", "")
+            
+            # LoRA名前を抽出（<lora:name:weight>形式から名前部分のみ取得）
+            lora1 = self._extract_lora_name(lora1_raw)
+            lora2 = self._extract_lora_name(lora2_raw)
+            lora3 = self._extract_lora_name(lora3_raw)
 
             print(f"[YAMLImageCycler] カテゴリ: {category}, 画像: {images[current_idx]} ({current_idx + 1}/{len(images)})")
+            print(f"[YAMLImageCycler] LoRA: {lora1}, {lora2}, {lora3}")
 
-            return (image_tensor, prompt, lora1, lora2, lora3)
+            return (image_tensor, mask_tensor, prompt, lora1, lora2, lora3)
 
         except Exception as e:
             print(f"[YAMLImageCycler] エラー: {e}")
