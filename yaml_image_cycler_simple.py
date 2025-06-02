@@ -56,12 +56,20 @@ class YAMLImageCyclerSimple:
 
     def _load_yaml(self, path):
         """YAMLファイルをキャッシュ付きで読み込み"""
-        abs_path = os.path.abspath(path) # 絶対パスに変換してみる
+        normalized_path = path.strip('"').strip("'")
+        abs_path = os.path.abspath(normalized_path) # 絶対パスに変換してみる
+
+        # デバッグ用に表示
+        print(f"[YAMLImageCyclerSimple] Debug (_load_yaml): Original path: '{path}'")
+        print(f"[YAMLImageCyclerSimple] Debug (_load_yaml): Normalized path: '{normalized_path}'")
+        print(f"[YAMLImageCyclerSimple] Debug (_load_yaml): Absolute path: '{abs_path}'")
+
         if not os.path.exists(abs_path): # 絶対パスで存在確認
             cwd = os.getcwd()
             error_message = (
                 f"YAMLファイルが見つかりません。\n"
                 f"  指定されたパス: {path}\n"
+                f"  正規化されたパス: {normalized_path}\n"
                 f"  絶対パスとして解釈: {abs_path}\n"
                 f"  現在の作業ディレクトリ: {cwd}\n"
                 f"  ファイルが存在するか、アクセス権があるか確認してください。"
@@ -158,15 +166,24 @@ class YAMLImageCyclerSimple:
         """メイン実行関数"""
         try:
             # YAMLパスのチェックと正規化
-            abs_yaml_path = os.path.abspath(yaml_path)
+            # 左右の引用符を除去
+            normalized_yaml_path = yaml_path.strip('"').strip("'")
+            abs_yaml_path = os.path.abspath(normalized_yaml_path)
+            
+            # デバッグ用に表示
+            print(f"[YAMLImageCyclerSimple] Debug: Original yaml_path: '{yaml_path}'")
+            print(f"[YAMLImageCyclerSimple] Debug: Normalized yaml_path: '{normalized_yaml_path}'")
+            print(f"[YAMLImageCyclerSimple] Debug: Absolute yaml_path: '{abs_yaml_path}'")
+
             if not os.path.exists(abs_yaml_path):
                 cwd = os.getcwd()
                 error_message = (
                     f"executeメソッド: YAMLファイルが見つかりません。\n"
                     f"  指定されたyaml_path: {yaml_path}\n"
+                    f"  正規化されたyaml_path: {normalized_yaml_path}\n"
                     f"  絶対パスとして解釈: {abs_yaml_path}\n"
                     f"  現在の作業ディレクトリ: {cwd}\n"
-                    f"  ComfyUIのUIで指定したパスが正しいか確認してください。"
+                    f"  ComfyUIのUIで指定したパスが正しいか、パスに余計な引用符が含まれていないか確認してください。"
                 )
                 raise FileNotFoundError(error_message)
 
