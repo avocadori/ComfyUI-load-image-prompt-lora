@@ -12,8 +12,8 @@ class YAMLImageCyclerSimple:
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = ("IMAGE", "MASK", "STRING")
-    RETURN_NAMES  = ("image", "mask", "category")
+    RETURN_TYPES  = ("IMAGE", "MASK", "STRING", "STRING")
+    RETURN_NAMES  = ("image", "mask", "category", "yaml_path")
 
     def __init__(self):
         # インスタンス変数として状態を管理
@@ -187,7 +187,7 @@ class YAMLImageCyclerSimple:
 
             print(f"[YAMLImageCyclerSimple] カテゴリ: {category}, 画像: {images[current_idx]} ({current_idx + 1}/{len(images)})")
 
-            return (image_tensor, mask_tensor, category)
+            return (image_tensor, mask_tensor, category, yaml_path)
 
         except Exception as e:
             print(f"[YAMLImageCyclerSimple] エラー: {e}")
