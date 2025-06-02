@@ -2,6 +2,7 @@ import os
 import yaml
 from PIL import Image
 import numpy as np
+import torch # 追加
 
 class YAMLImageCyclerSimple:
     """
@@ -108,28 +109,28 @@ class YAMLImageCyclerSimple:
             # ComfyUI の IMAGE フォーマット (B, H, W, C, fp32 0-1)
             np_img = np.array(pil_image).astype(np.float32) / 255.0
             np_img = np_img[None,]  # Batch 次元を付加
-            return np_img
+            return torch.from_numpy(np_img) # NumPy配列からPyTorchテンソルに変換
         except Exception as e:
             raise RuntimeError(f"画像の読み込みに失敗しました: {image_path}, エラー: {e}")
 
     def _load_mask_as_tensor(self, mask_path):
         """マスク画像をComfyUI形式のテンソルとして読み込み"""
         if not os.path.exists(mask_path):
-            return None
+            return None # マスクがない場合はNoneを返すのは適切
         
         try:
             pil_mask = Image.open(mask_path).convert("L")  # グレースケールに変換
-            # ComfyUI の MASK フォーマット (B, H, W, fp32 0-1)
             np_mask = np.array(pil_mask).astype(np.float32) / 255.0
             np_mask = np_mask[None,]  # Batch 次元を付加
-            return np_mask
+            return torch.from_numpy(np_mask) # NumPy配列からPyTorchテンソルに変換
         except Exception as e:
             print(f"[YAMLImageCyclerSimple] マスクの読み込みに失敗: {mask_path}, エラー: {e}")
-            return None
+            return None # エラー時もNone
 
     def _create_empty_mask(self, height, width):
         """空のマスクを作成"""
-        return np.zeros((1, height, width), dtype=np.float32)
+        # 空マスクもPyTorchテンソルで返す
+        return torch.zeros((1, height, width), dtype=torch.float32)
 
     def _find_mask_file(self, image_path, mask_folder=None):
         """画像に対応するマスクファイルを検索"""
