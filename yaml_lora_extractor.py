@@ -60,16 +60,22 @@ class YAMLLoRAExtractor:
         return self._yaml_buf[path]
 
     def _get_available_loras(self):
-        """利用可能なLoRAファイルのリストを取得"""
+        """利用可能なLoRAファイルのリストと名前のマッピングを取得"""
         try:
-            # ComfyUIのfolder_pathsを使用してLoRAファイルを取得
-            lora_files = folder_paths.get_filename_list("loras")
-            # 拡張子を除去してLoRA名のみを返す
-            lora_names = [os.path.splitext(f)[0] for f in lora_files]
-            return lora_names
+            lora_files_with_ext = folder_paths.get_filename_list("loras") # 例: ["subdir/loraA.safetensors", "loraB.pt"]
+            
+            # 拡張子なしの名前をキー、拡張子付きの元のファイル名を値とする辞書
+            # 例: {"subdir/loraA": "subdir/loraA.safetensors", "loraB": "loraB.pt"}
+            # 注意: 同じ拡張子なし名で異なる拡張子のファイルが存在する場合、後のもので上書きされる
+            name_map = {os.path.splitext(f)[0]: f for f in lora_files_with_ext}
+            
+            # 拡張子なしの名前のリスト (従来通り)
+            lora_names_no_ext = list(name_map.keys())
+            
+            return lora_names_no_ext, name_map, lora_files_with_ext
         except Exception as e:
             print(f"[YAMLLoRAExtractor] LoRAファイル取得エラー: {e}")
-            return []
+            return [], {}, []
 
     def _parse_lora_string(self, lora_string):
         """LoRA文字列を解析して名前と重みを抽出
@@ -97,31 +103,50 @@ class YAMLLoRAExtractor:
         # 通常の文字列の場合は名前のみ
         return str(lora_string).strip(), 1.0
 
-    def _validate_lora_name(self, lora_name, available_loras):
-        """LoRA名が利用可能なLoRAリストに存在するかチェック"""
-        if not lora_name:
+    def _validate_lora_name(self, lora_name_from_yaml, available_loras_no_ext, lora_name_map, available_loras_with_ext, raw_mode):
+        """LoRA名が利用可能なLoRAリストに存在するかチェックし、適切なファイル名を返す"""
+        if not lora_name_from_yaml:
             return None
 
-        # lora_name から拡張子を除去 (例: .safetensors, .pt など)
-        name_without_ext, ext = os.path.splitext(lora_name)
-        processed_lora_name = name_without_ext if ext.lower() in [".safetensors", ".pt", ".ckpt", ".bin"] else lora_name
-        
-        # 完全一致をチェック (拡張子なしの名前で比較)
-        if processed_lora_name in available_loras:
-            return processed_lora_name # 拡張子なしの正しい名前を返す
-        
-        # 部分一致をチェック（大文字小文字を無視、拡張子なしの名前で比較）
-        processed_lora_name_lower = processed_lora_name.lower()
-        for available in available_loras: # available_loras は既に拡張子なし
-            if available.lower() == processed_lora_name_lower:
-                print(f"[YAMLLoRAExtractor] LoRA名を修正: 元の名前 '{lora_name}' -> 利用可能な名前 '{available}'")
-                return available # 拡張子なしの正しい名前を返す
-        
-        # 見つからない場合は警告を出力してそのまま返す (元の名前を返す)
-        print(f"[YAMLLoRAExtractor] 警告: LoRA '{lora_name}' (処理後: '{processed_lora_name}') が見つかりません")
-        # print(f"[YAMLLoRAExtractor] 利用可能なLoRA (先頭10件): {available_loras[:10]}...")
-        print(f"[YAMLLoRAExtractor] 利用可能なLoRA (全{len(available_loras)}件): {available_loras}") # 全件表示に変更
-        return lora_name # 元のlora_nameを返す (下流の処理でエラーになるかもしれないが、ここでは加工しない)
+        if raw_mode:
+            # RAWモードの場合: YAMLの記述をそのまま使い、拡張子付きリストと照合
+            # <lora:NAME:WEIGHT> から抽出されたNAME部分が lora_name_from_yaml に入る
+            
+            # まず、lora_name_from_yaml が拡張子付きリストにそのまま存在するか確認
+            if lora_name_from_yaml in available_loras_with_ext:
+                return lora_name_from_yaml
+            
+            # 次に、lora_name_from_yaml の拡張子を除去したものが、拡張子なしマップのキーに存在するか確認し、
+            # 存在すれば対応する拡張子付きファイル名を返す
+            name_no_ext_yaml, _ = os.path.splitext(lora_name_from_yaml)
+            if name_no_ext_yaml in lora_name_map: # lora_name_mapのキーは拡張子なし
+                return lora_name_map[name_no_ext_yaml]
+
+            # それでも見つからない場合は警告
+            print(f"[YAMLLoRAExtractor] (RAW Mode) 警告: LoRA '{lora_name_from_yaml}' が利用可能なLoRAリストに見つかりません。")
+            print(f"[YAMLLoRAExtractor] 利用可能なLoRA (全{len(available_loras_with_ext)}件): {available_loras_with_ext}")
+            return lora_name_from_yaml # 元の記述を返す
+        else:
+            # 通常モード (Validated Mode)
+            # YAMLの記述が拡張子を含んでいてもいなくても、まず拡張子なしの名前で処理
+            name_no_ext_yaml, _ = os.path.splitext(lora_name_from_yaml)
+            processed_name_no_ext = name_no_ext_yaml 
+
+            # 拡張子なしの名前が lora_name_map のキーに存在するか (完全一致)
+            if processed_name_no_ext in lora_name_map: # lora_name_mapのキーは拡張子なし
+                return lora_name_map[processed_name_no_ext] # 対応する拡張子付きファイル名を返す
+            
+            # 大文字小文字を無視して比較
+            processed_name_no_ext_lower = processed_name_no_ext.lower()
+            # available_loras_no_ext は lora_name_map のキーセットと同じはず
+            for name_no_ext_available in available_loras_no_ext: 
+                if name_no_ext_available.lower() == processed_name_no_ext_lower:
+                    print(f"[YAMLLoRAExtractor] LoRA名を修正: 元の名前 '{lora_name_from_yaml}' -> 利用可能な名前 '{lora_name_map[name_no_ext_available]}'")
+                    return lora_name_map[name_no_ext_available] # 対応する拡張子付きファイル名を返す
+            
+            print(f"[YAMLLoRAExtractor] (Validated Mode) 警告: LoRA '{lora_name_from_yaml}' (処理後拡張子なし: '{processed_name_no_ext}') が見つかりません")
+            print(f"[YAMLLoRAExtractor] 利用可能なLoRA (全{len(available_loras_with_ext)}件): {available_loras_with_ext}")
+            return lora_name_from_yaml # 元の記述を返す
 
     # ───────────────────────────────────────────
     # メイン処理
@@ -140,7 +165,7 @@ class YAMLLoRAExtractor:
                 )
 
             # 利用可能なLoRAファイルを取得
-            available_loras = self._get_available_loras()
+            available_loras_no_ext, lora_name_map, available_loras_with_ext = self._get_available_loras()
 
             # カテゴリ設定を取得
             category_config = cfg[category]
@@ -158,14 +183,9 @@ class YAMLLoRAExtractor:
             lora3_name, lora3_weight = self._parse_lora_string(lora3_raw)
 
             # LoRA名を検証・修正
-            if raw_lora_names:
-                # raw_lora_namesがTrueの場合、検証や加工を行わず、パースした名前をそのまま使用
-                # ただし、<lora:name:weight> 形式から名前は抽出されている状態
-                pass # loraX_name は既に _parse_lora_string で抽出済み
-            else:
-                lora1_name = self._validate_lora_name(lora1_name, available_loras)
-                lora2_name = self._validate_lora_name(lora2_name, available_loras)
-                lora3_name = self._validate_lora_name(lora3_name, available_loras)
+            lora1_name = self._validate_lora_name(lora1_name, available_loras_no_ext, lora_name_map, available_loras_with_ext, raw_lora_names)
+            lora2_name = self._validate_lora_name(lora2_name, available_loras_no_ext, lora_name_map, available_loras_with_ext, raw_lora_names)
+            lora3_name = self._validate_lora_name(lora3_name, available_loras_no_ext, lora_name_map, available_loras_with_ext, raw_lora_names)
 
             print(f"[YAMLLoRAExtractor] カテゴリ: {category}")
             print(f"[YAMLLoRAExtractor] LoRA名処理モード: {'Raw' if raw_lora_names else 'Validated'}")
