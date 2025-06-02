@@ -34,7 +34,8 @@ class YAMLLoRAExtractor:
         return {
             "required": {
                 "yaml_path": ("STRING", {"default": default_yaml}),
-                "category": (keys if keys else "STRING", )
+                "category": (keys if keys else "STRING", ),
+                "raw_lora_names": ("BOOLEAN", {"default": False}), # 新しい入力パラメータ
             }
         }
 
@@ -125,7 +126,7 @@ class YAMLLoRAExtractor:
     # ───────────────────────────────────────────
     # メイン処理
     # ───────────────────────────────────────────
-    def execute(self, yaml_path: str, category: str):
+    def execute(self, yaml_path: str, category: str, raw_lora_names: bool): # 新しいパラメータを追加
         """メイン実行関数"""
         try:
             # YAML設定を読み込み
@@ -157,11 +158,17 @@ class YAMLLoRAExtractor:
             lora3_name, lora3_weight = self._parse_lora_string(lora3_raw)
 
             # LoRA名を検証・修正
-            lora1_name = self._validate_lora_name(lora1_name, available_loras)
-            lora2_name = self._validate_lora_name(lora2_name, available_loras)
-            lora3_name = self._validate_lora_name(lora3_name, available_loras)
+            if raw_lora_names:
+                # raw_lora_namesがTrueの場合、検証や加工を行わず、パースした名前をそのまま使用
+                # ただし、<lora:name:weight> 形式から名前は抽出されている状態
+                pass # loraX_name は既に _parse_lora_string で抽出済み
+            else:
+                lora1_name = self._validate_lora_name(lora1_name, available_loras)
+                lora2_name = self._validate_lora_name(lora2_name, available_loras)
+                lora3_name = self._validate_lora_name(lora3_name, available_loras)
 
             print(f"[YAMLLoRAExtractor] カテゴリ: {category}")
+            print(f"[YAMLLoRAExtractor] LoRA名処理モード: {'Raw' if raw_lora_names else 'Validated'}")
             print(f"[YAMLLoRAExtractor] プロンプト: {prompt}")
             print(f"[YAMLLoRAExtractor] LoRA1: {lora1_name} (重み: {lora1_weight})")
             print(f"[YAMLLoRAExtractor] LoRA2: {lora2_name} (重み: {lora2_weight})")
