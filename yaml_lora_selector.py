@@ -97,7 +97,7 @@ class YAMLLoRASelector:
     def _find_matching_lora_file(self, lora_name, available_loras):
         """LoRA名に一致するファイルを検索"""
         if not lora_name:
-            return ""
+            return "None"  # LoRA名がない場合は "None" を返す
         
         # 完全一致をチェック（拡張子付き）
         for lora_file in available_loras:
@@ -125,32 +125,44 @@ class YAMLLoRASelector:
                 print(f"[YAMLLoRASelector] LoRAファイル発見（大文字小文字修正）: {lora_name} -> {lora_file}")
                 return lora_file
         
-        # 見つからない場合は利用可能なLoRAリストの最初のファイルを返す（エラー回避）
-        if available_loras:
-            print(f"[YAMLLoRASelector] 警告: LoRA '{lora_name}' に対応するファイルが見つかりません。デフォルトファイルを使用: {available_loras[0]}")
-            return available_loras[0]
+        # 見つからない場合
+        if not available_loras:
+            print(f"[YAMLLoRASelector] エラー: 利用可能なLoRAファイルがシステムに見つかりません。LoRA '{lora_name}' を読み込めませんでした。")
+            return "None"
         else:
-            print(f"[YAMLLoRASelector] エラー: 利用可能なLoRAファイルがありません")
-            return ""
+            # 利用可能なLoRAはあるが、指定されたlora_nameが見つからない場合
+            print(f"[YAMLLoRASelector] 警告: LoRA '{lora_name}' に一致するファイルが見つかりませんでした。代わりに \"None\" を使用します。")
+            return "None" # 指定されたLoRAが見つからない場合は "None" を返す
 
     # ───────────────────────────────────────────
     # メイン処理
     # ───────────────────────────────────────────
     def execute(self, category: str, yaml_path: str = "setting.yaml"):
         """メイン実行関数"""
+        lora1_file, lora2_file, lora3_file = "None", "None", "None"
+        lora1_weight, lora2_weight, lora3_weight = 1.0, 1.0, 1.0
+
         try:
             # YAML設定を読み込み
-            cfg = self._load_yaml(yaml_path)
+            try:
+                cfg = self._load_yaml(yaml_path)
+            except FileNotFoundError as e:
+                print(f"[YAMLLoRASelector] エラー: YAMLファイル '{yaml_path}' が見つかりません。詳細: {e}")
+                return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
 
             if category not in cfg:
                 available_categories = list(cfg.keys()) if cfg else []
-                raise ValueError(
-                    f"YAML にカテゴリ「{category}」が見つかりません。"
+                print(
+                    f"[YAMLLoRASelector] エラー: YAML にカテゴリ「{category}」が見つかりません。"
                     f"利用可能なカテゴリ: {available_categories}"
                 )
+                return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
 
             # 利用可能なLoRAファイルを取得
             available_loras = self._get_available_loras()
+            if not available_loras:
+                print(f"[YAMLLoRASelector] 警告: システムに利用可能なLoRAファイルが見つかりませんでした。")
+                # この場合でも、YAMLにLoRA名が指定されていれば、_find_matching_lora_file が "None" を返す
 
             # カテゴリ設定を取得
             category_config = cfg[category]
@@ -179,6 +191,6 @@ class YAMLLoRASelector:
         except Exception as e:
             print(f"[YAMLLoRASelector] エラー: {e}")
             # エラーが発生した場合はデフォルト値を返す
-            available_loras = self._get_available_loras()
-            default_file = available_loras[0] if available_loras else ""
-            return (default_file, 1.0, default_file, 1.0, default_file, 1.0, yaml_path)
+            print(f"[YAMLLoRASelector] 予期せぬエラーが発生しました: {e}")
+            # RETURN_TYPESに準拠するため、"None" を返す
+            return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
