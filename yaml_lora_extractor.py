@@ -11,7 +11,7 @@ class YAMLLoRAExtractor:
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = ("STRING", "*", "*", "*", "FLOAT", "FLOAT", "FLOAT")
+    RETURN_TYPES  = ("STRING", "STRING", "STRING", "STRING", "FLOAT", "FLOAT", "FLOAT") # loraX_name を STRING に変更
     RETURN_NAMES  = ("prompt", "lora1_name", "lora2_name", "lora3_name", "lora1_weight", "lora2_weight", "lora3_weight")
 
     def __init__(self):
