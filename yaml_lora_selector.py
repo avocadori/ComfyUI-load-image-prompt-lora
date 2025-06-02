@@ -10,8 +10,8 @@ class YAMLLoRASelector:
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = (folder_paths.get_filename_list("loras"), "FLOAT", folder_paths.get_filename_list("loras"), "FLOAT", folder_paths.get_filename_list("loras"), "FLOAT", "STRING")
-    RETURN_NAMES  = ("lora1", "strength1", "lora2", "strength2", "lora3", "strength3", "yaml_path")
+    RETURN_TYPES  = ("WANVIDLORA", "STRING") # WanVideoLoraSelect の prev_lora と互換性のある型
+    RETURN_NAMES  = ("wanvid_lora", "yaml_path")
 
     def __init__(self):
         self._yaml_buf = {}    # キャッシュした YAML dict
@@ -139,8 +139,18 @@ class YAMLLoRASelector:
     # ───────────────────────────────────────────
     def execute(self, category: str, yaml_path: str = "setting.yaml"):
         """メイン実行関数"""
-        lora1_file, lora2_file, lora3_file = "None", "None", "None"
-        lora1_weight, lora2_weight, lora3_weight = 1.0, 1.0, 1.0
+        output_loras_list = []
+        # エラー時のデフォルト返り値 (WANVIDLORA, STRING)
+        default_wanvidlora_item = {
+            "path": "None", 
+            "strength": 1.0, 
+            "name": "None", 
+            "blocks": {}, 
+            "layer_filter": "", 
+            "low_mem_load": False
+        }
+        error_return_value = ([default_wanvidlora_item], yaml_path)
+
 
         try:
             # YAML設定を読み込み
@@ -148,7 +158,7 @@ class YAMLLoRASelector:
                 cfg = self._load_yaml(yaml_path)
             except FileNotFoundError as e:
                 print(f"[YAMLLoRASelector] エラー: YAMLファイル '{yaml_path}' が見つかりません。詳細: {e}")
-                return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
+                return error_return_value
 
             if category not in cfg:
                 available_categories = list(cfg.keys()) if cfg else []
@@ -156,7 +166,7 @@ class YAMLLoRASelector:
                     f"[YAMLLoRASelector] エラー: YAML にカテゴリ「{category}」が見つかりません。"
                     f"利用可能なカテゴリ: {available_categories}"
                 )
-                return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
+                return error_return_value
 
             # 利用可能なLoRAファイルを取得
             available_loras = self._get_available_loras()
@@ -167,30 +177,52 @@ class YAMLLoRASelector:
             # カテゴリ設定を取得
             category_config = cfg[category]
             
-            # LoRA情報を解析
-            lora1_raw = category_config.get("lora1", "")
-            lora2_raw = category_config.get("lora2", "")
-            lora3_raw = category_config.get("lora3", "")
-            
-            lora1_name, lora1_weight = self._parse_lora_string(lora1_raw)
-            lora2_name, lora2_weight = self._parse_lora_string(lora2_raw)
-            lora3_name, lora3_weight = self._parse_lora_string(lora3_raw)
+            lora_keys = ["lora1", "lora2", "lora3"]
+            for key_base in lora_keys:
+                lora_raw = category_config.get(key_base, "")
+                if not lora_raw: # YAMLにloraXが定義されていないか空文字の場合はスキップ
+                    print(f"[YAMLLoRASelector] {key_base} はYAMLで定義されていないか空のためスキップします。")
+                    continue
 
-            # LoRAファイル名を検索
-            lora1_file = self._find_matching_lora_file(lora1_name, available_loras)
-            lora2_file = self._find_matching_lora_file(lora2_name, available_loras)
-            lora3_file = self._find_matching_lora_file(lora3_name, available_loras)
+                lora_name_from_yaml, lora_weight = self._parse_lora_string(lora_raw)
+                
+                # LoRAファイル名を検索
+                # _find_matching_lora_file は見つからない場合 "None" を返す
+                lora_file_path_found = self._find_matching_lora_file(lora_name_from_yaml, available_loras)
 
-            print(f"[YAMLLoRASelector] カテゴリ: {category}")
-            print(f"[YAMLLoRASelector] LoRA1: {lora1_file} (重み: {lora1_weight})")
-            print(f"[YAMLLoRASelector] LoRA2: {lora2_file} (重み: {lora2_weight})")
-            print(f"[YAMLLoRASelector] LoRA3: {lora3_file} (重み: {lora3_weight})")
+                # WanVideoLoraSelectのgetlorapathメソッドの戻り値の形式に合わせる
+                # lora_file_path_found が "None" の場合でも、そのまま設定
+                # folder_paths.get_full_path は "None" の場合、そのまま "None" を返すことを期待
+                # ただし、実際にファイルパスとして存在しない "None" を渡すとエラーになる可能性があるため、
+                # lora_file_path_found が "None" でない場合のみ get_full_path を呼ぶ
+                actual_path = "None"
+                if lora_file_path_found != "None":
+                    try:
+                        actual_path = folder_paths.get_full_path("loras", lora_file_path_found)
+                        if actual_path is None: # get_full_path が見つからない場合 None を返すことがある
+                           actual_path = "None"
+                           print(f"[YAMLLoRASelector] 警告: folder_paths.get_full_path が {lora_file_path_found} のパスを見つけられませんでした。")
+                    except Exception as path_e:
+                        print(f"[YAMLLoRASelector] 警告: folder_paths.get_full_path でエラー: {path_e}。ファイル: {lora_file_path_found}")
+                        actual_path = "None" # エラー時もNoneにフォールバック
+                
+                lora_info = {
+                    "path": actual_path,
+                    "strength": lora_weight,
+                    "name": lora_name_from_yaml if lora_name_from_yaml else "None", # YAMLでの名前
+                    "blocks": {},  # YAMLLoRASelectorではblocksの指定はサポートしない
+                    "layer_filter": "", # 同上
+                    "low_mem_load": False # 同上
+                }
+                output_loras_list.append(lora_info)
+                print(f"[YAMLLoRASelector] {key_base}: {lora_info['path']} (強度: {lora_info['strength']})")
 
-            return (lora1_file, lora1_weight, lora2_file, lora2_weight, lora3_file, lora3_weight, yaml_path)
+            if not output_loras_list: # 処理できるLoRAが一つもなかった場合
+                print(f"[YAMLLoRASelector] カテゴリ '{category}' に有効なLoRA設定が見つかりませんでした。")
+                output_loras_list.append(default_wanvidlora_item) # デフォルトの "None" LoRA情報を追加
+
+            return (output_loras_list, yaml_path)
 
         except Exception as e:
-            print(f"[YAMLLoRASelector] エラー: {e}")
-            # エラーが発生した場合はデフォルト値を返す
             print(f"[YAMLLoRASelector] 予期せぬエラーが発生しました: {e}")
-            # RETURN_TYPESに準拠するため、"None" を返す
-            return ("None", 1.0, "None", 1.0, "None", 1.0, yaml_path)
+            return error_return_value
