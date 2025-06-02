@@ -10,8 +10,8 @@ class YAMLLoRASelector:
     # ComfyUI メタ情報 --------------------------
     CATEGORY      = "Loaders"
     FUNCTION      = "execute"
-    RETURN_TYPES  = ("STRING", "FLOAT", "STRING", "FLOAT", "STRING", "FLOAT")
-    RETURN_NAMES  = ("lora1", "strength1", "lora2", "strength2", "lora3", "strength3")
+    RETURN_TYPES  = (folder_paths.get_filename_list("loras"), "FLOAT", folder_paths.get_filename_list("loras"), "FLOAT", folder_paths.get_filename_list("loras"), "FLOAT", "STRING")
+    RETURN_NAMES  = ("lora1", "strength1", "lora2", "strength2", "lora3", "strength3", "yaml_path")
 
     def __init__(self):
         self._yaml_buf = {}    # キャッシュした YAML dict
@@ -32,8 +32,10 @@ class YAMLLoRASelector:
 
         return {
             "required": {
-                "yaml_path": ("STRING", {"default": default_yaml}),
-                "category": (keys if keys else "STRING", )
+                "category": (keys if keys else ["STRING"], )
+            },
+            "optional": {
+                "yaml_path": ("STRING", {"default": default_yaml})
             }
         }
 
@@ -123,15 +125,18 @@ class YAMLLoRASelector:
                 print(f"[YAMLLoRASelector] LoRAファイル発見（大文字小文字修正）: {lora_name} -> {lora_file}")
                 return lora_file
         
-        # 見つからない場合は警告を出力して空文字を返す
-        print(f"[YAMLLoRASelector] 警告: LoRA '{lora_name}' に対応するファイルが見つかりません")
-        print(f"[YAMLLoRASelector] 利用可能なLoRA: {available_loras[:10]}...")
-        return ""
+        # 見つからない場合は利用可能なLoRAリストの最初のファイルを返す（エラー回避）
+        if available_loras:
+            print(f"[YAMLLoRASelector] 警告: LoRA '{lora_name}' に対応するファイルが見つかりません。デフォルトファイルを使用: {available_loras[0]}")
+            return available_loras[0]
+        else:
+            print(f"[YAMLLoRASelector] エラー: 利用可能なLoRAファイルがありません")
+            return ""
 
     # ───────────────────────────────────────────
     # メイン処理
     # ───────────────────────────────────────────
-    def execute(self, yaml_path: str, category: str):
+    def execute(self, category: str, yaml_path: str = "setting.yaml"):
         """メイン実行関数"""
         try:
             # YAML設定を読み込み
@@ -169,8 +174,11 @@ class YAMLLoRASelector:
             print(f"[YAMLLoRASelector] LoRA2: {lora2_file} (重み: {lora2_weight})")
             print(f"[YAMLLoRASelector] LoRA3: {lora3_file} (重み: {lora3_weight})")
 
-            return (lora1_file, lora1_weight, lora2_file, lora2_weight, lora3_file, lora3_weight)
+            return (lora1_file, lora1_weight, lora2_file, lora2_weight, lora3_file, lora3_weight, yaml_path)
 
         except Exception as e:
             print(f"[YAMLLoRASelector] エラー: {e}")
-            raise e
+            # エラーが発生した場合はデフォルト値を返す
+            available_loras = self._get_available_loras()
+            default_file = available_loras[0] if available_loras else ""
+            return (default_file, 1.0, default_file, 1.0, default_file, 1.0, yaml_path)
