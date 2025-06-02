@@ -56,13 +56,23 @@ class YAMLImageCyclerSimple:
 
     def _load_yaml(self, path):
         """YAMLファイルをキャッシュ付きで読み込み"""
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"YAMLファイルが見つかりません: {path}")
+        abs_path = os.path.abspath(path) # 絶対パスに変換してみる
+        if not os.path.exists(abs_path): # 絶対パスで存在確認
+            cwd = os.getcwd()
+            error_message = (
+                f"YAMLファイルが見つかりません。\n"
+                f"  指定されたパス: {path}\n"
+                f"  絶対パスとして解釈: {abs_path}\n"
+                f"  現在の作業ディレクトリ: {cwd}\n"
+                f"  ファイルが存在するか、アクセス権があるか確認してください。"
+            )
+            raise FileNotFoundError(error_message)
         
-        if path not in self._yaml_buf:
-            with open(path, "r", encoding="utf-8") as f:
-                self._yaml_buf[path] = yaml.safe_load(f)
-        return self._yaml_buf[path]
+        # pathの代わりにabs_pathを使うことで、キャッシュキーの一貫性を保つ
+        if abs_path not in self._yaml_buf:
+            with open(abs_path, "r", encoding="utf-8") as f:
+                self._yaml_buf[abs_path] = yaml.safe_load(f)
+        return self._yaml_buf[abs_path]
 
     def _get_image_files(self, folder_path):
         """フォルダから画像ファイル一覧を取得"""
@@ -147,8 +157,21 @@ class YAMLImageCyclerSimple:
     def execute(self, yaml_path: str, parent_dir: str, category: str):
         """メイン実行関数"""
         try:
+            # YAMLパスのチェックと正規化
+            abs_yaml_path = os.path.abspath(yaml_path)
+            if not os.path.exists(abs_yaml_path):
+                cwd = os.getcwd()
+                error_message = (
+                    f"executeメソッド: YAMLファイルが見つかりません。\n"
+                    f"  指定されたyaml_path: {yaml_path}\n"
+                    f"  絶対パスとして解釈: {abs_yaml_path}\n"
+                    f"  現在の作業ディレクトリ: {cwd}\n"
+                    f"  ComfyUIのUIで指定したパスが正しいか確認してください。"
+                )
+                raise FileNotFoundError(error_message)
+
             # YAML設定を読み込み（マスクフォルダ設定のため）
-            cfg = self._load_yaml(yaml_path)
+            cfg = self._load_yaml(abs_yaml_path) # 正規化されたパスを使用
 
             if category not in cfg:
                 available_categories = list(cfg.keys()) if cfg else []
