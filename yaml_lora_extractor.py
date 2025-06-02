@@ -100,22 +100,26 @@ class YAMLLoRAExtractor:
         """LoRA名が利用可能なLoRAリストに存在するかチェック"""
         if not lora_name:
             return None
+
+        # lora_name から拡張子を除去 (例: .safetensors, .pt など)
+        name_without_ext, ext = os.path.splitext(lora_name)
+        processed_lora_name = name_without_ext if ext.lower() in [".safetensors", ".pt", ".ckpt", ".bin"] else lora_name
         
-        # 完全一致をチェック
-        if lora_name in available_loras:
-            return lora_name
+        # 完全一致をチェック (拡張子なしの名前で比較)
+        if processed_lora_name in available_loras:
+            return processed_lora_name # 拡張子なしの正しい名前を返す
         
-        # 部分一致をチェック（大文字小文字を無視）
-        lora_name_lower = lora_name.lower()
-        for available in available_loras:
-            if available.lower() == lora_name_lower:
-                print(f"[YAMLLoRAExtractor] LoRA名を修正: {lora_name} -> {available}")
-                return available
+        # 部分一致をチェック（大文字小文字を無視、拡張子なしの名前で比較）
+        processed_lora_name_lower = processed_lora_name.lower()
+        for available in available_loras: # available_loras は既に拡張子なし
+            if available.lower() == processed_lora_name_lower:
+                print(f"[YAMLLoRAExtractor] LoRA名を修正: 元の名前 '{lora_name}' -> 利用可能な名前 '{available}'")
+                return available # 拡張子なしの正しい名前を返す
         
-        # 見つからない場合は警告を出力してそのまま返す
-        print(f"[YAMLLoRAExtractor] 警告: LoRA '{lora_name}' が見つかりません")
-        print(f"[YAMLLoRAExtractor] 利用可能なLoRA: {available_loras[:10]}...")  # 最初の10個を表示
-        return lora_name
+        # 見つからない場合は警告を出力してそのまま返す (元の名前を返す)
+        print(f"[YAMLLoRAExtractor] 警告: LoRA '{lora_name}' (処理後: '{processed_lora_name}') が見つかりません")
+        print(f"[YAMLLoRAExtractor] 利用可能なLoRA (先頭10件): {available_loras[:10]}...")
+        return lora_name # 元のlora_nameを返す (下流の処理でエラーになるかもしれないが、ここでは加工しない)
 
     # ───────────────────────────────────────────
     # メイン処理
