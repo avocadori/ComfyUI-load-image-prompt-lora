@@ -118,7 +118,8 @@ class YAMLLoRAExtractor:
         
         # 見つからない場合は警告を出力してそのまま返す (元の名前を返す)
         print(f"[YAMLLoRAExtractor] 警告: LoRA '{lora_name}' (処理後: '{processed_lora_name}') が見つかりません")
-        print(f"[YAMLLoRAExtractor] 利用可能なLoRA (先頭10件): {available_loras[:10]}...")
+        # print(f"[YAMLLoRAExtractor] 利用可能なLoRA (先頭10件): {available_loras[:10]}...")
+        print(f"[YAMLLoRAExtractor] 利用可能なLoRA (全{len(available_loras)}件): {available_loras}") # 全件表示に変更
         return lora_name # 元のlora_nameを返す (下流の処理でエラーになるかもしれないが、ここでは加工しない)
 
     # ───────────────────────────────────────────
