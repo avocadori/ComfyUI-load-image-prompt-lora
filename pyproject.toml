@@ -1,0 +1,15 @@
+[project]
+name = "load-image-prompt-lora"
+description = "NODES: YAML Image Cycler (Full), YAML Image Cycler (Simple), YAML LoRA Extractor, YAML LoRA Loader, YAML LoRA Selector"
+version = "1.0.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/avocadori/ComfyUI-load-image-prompt-lora"
+#  Used by Comfy Registry https://registry.comfy.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-load-image-prompt-lora"
+Icon = ""
+includes = []
